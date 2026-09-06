@@ -26,13 +26,31 @@ class MainActivity : Activity() {
     }
 
     private fun loadDictionary() {
+        words.clear()
         runCatching {
             assets.open("txt.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
-                lines.map(String::trim)
-                    .filter { it.length >= 2 && it.all { ch -> ch in '\uAC00'..'\uD7A3' } }
-                    .forEach(words::add)
+                lines.forEach { rawLine ->
+                    val line = rawLine.trim()
+                    if (line.isEmpty() || line.startsWith("#")) return@forEach
+
+                    // 한 줄에 단어만 있는 형식뿐 아니라
+                    // "단어\t기타정보", "단어 기타정보" 같은 사전 형식도 지원한다.
+                    val candidate = line
+                        .split('\t', ' ', ',', '|')
+                        .firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+
+                    if (isValidWord(candidate)) {
+                        words += candidate
+                    }
+                }
             }
         }
+    }
+
+    private fun isValidWord(word: String): Boolean {
+        return word.length >= 2 && word.all { ch -> ch in '\uAC00'..'\uD7A3' }
     }
 
     private fun buildUi() {
@@ -112,7 +130,7 @@ class MainActivity : Activity() {
         gameOver = false
         turn.text = "첫 단어를 입력하세요"
         scoreView.text = "점수 0 · 사용 0개"
-        status.text = if (words.isEmpty()) "txt.txt 사전을 넣어주세요." else "사전 ${words.size}개 · 내가 먼저 시작"
+        status.text = if (words.isEmpty()) "txt.txt에서 읽을 수 있는 단어가 없어요." else "사전 ${words.size}개 · 내가 먼저 시작"
         input.text.clear()
         input.isEnabled = true
     }
@@ -124,12 +142,12 @@ class MainActivity : Activity() {
             status.text = "단어를 입력해주세요."
             return
         }
-        if (word.length < 2) {
-            status.text = "두 글자 이상 입력해주세요."
+        if (!isValidWord(word)) {
+            status.text = "한글 두 글자 이상의 단어만 사용할 수 있어요."
             return
         }
-        if (words.isNotEmpty() && word !in words) {
-            status.text = "사전에 없는 단어예요."
+        if (word !in words) {
+            status.text = "txt.txt 사전에 없는 단어예요."
             return
         }
         if (word in used) {
@@ -151,19 +169,24 @@ class MainActivity : Activity() {
 
     private fun computerTurn(first: Char) {
         val candidates = words.asSequence()
-            .filter { it.firstOrNull() == first && it !in used }
+            .filter { it.isNotEmpty() && it.first() == first && it !in used }
             .toList()
 
         if (candidates.isEmpty()) {
             gameOver = true
             turn.text = "🎉 승리!"
             status.text = "컴퓨터가 이어갈 단어를 찾지 못했어요."
-            scoreView.text = "최종 점수 $score"
+            scoreView.text = "최종 점수 $score · 총 사용 ${used.size}개"
             input.isEnabled = false
             return
         }
 
-        val next = candidates.maxByOrNull { it.length } ?: candidates.random()
+        // 너무 단순하게 '가장 긴 단어' 하나만 고르지 않고,
+        // 후보 중 긴 단어들을 묶어 약간의 랜덤성을 준다.
+        val maxLength = candidates.maxOf { it.length }
+        val strongCandidates = candidates.filter { it.length >= maxLength - 1 }
+        val next = strongCandidates.random()
+
         used += next
         lastWord = next
         turn.text = "컴퓨터: $next"
