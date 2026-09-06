@@ -80,10 +80,11 @@ class MainActivity : Activity() {
         val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         input = EditText(this).apply {
             hint = "단어 입력"
-            singleLine = true
-            textSize = 18f
-            setPadding(16, 12, 16, 12)
+            inputType = 1
             imeOptions = 6
+            textSize = 18f
+            setSingleLine()
+            setPadding(16, 12, 16, 12)
             setOnEditorActionListener { _, _, _ -> submitWord(); true }
         }
         inputRow.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
@@ -111,7 +112,7 @@ class MainActivity : Activity() {
         gameOver = false
         turn.text = "첫 단어를 입력하세요"
         scoreView.text = "점수 0 · 사용 0개"
-        status.text = if (words.isEmpty()) "txt.txt를 assets 폴더에 넣어주세요." else "사전 ${words.size}개 · 내가 먼저 시작"
+        status.text = if (words.isEmpty()) "txt.txt 사전을 넣어주세요." else "사전 ${words.size}개 · 내가 먼저 시작"
         input.text.clear()
         input.isEnabled = true
     }
