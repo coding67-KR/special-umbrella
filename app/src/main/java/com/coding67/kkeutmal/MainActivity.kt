@@ -5,20 +5,18 @@ import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
-import android.view.View
-import android.view.inputmethod.InputMethodManager
-import android.content.Context
 import android.widget.*
 
 class MainActivity : Activity() {
     private val used = mutableSetOf<String>()
     private val words = mutableSetOf<String>()
-    private lateinit var message: TextView
-    private lateinit var computerWord: TextView
+    private lateinit var status: TextView
+    private lateinit var turn: TextView
     private lateinit var input: EditText
-    private lateinit var scoreText: TextView
+    private lateinit var scoreView: TextView
     private var lastWord: String? = null
     private var score = 0
+    private var gameOver = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,9 +28,9 @@ class MainActivity : Activity() {
     private fun loadDictionary() {
         runCatching {
             assets.open("txt.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
-                lines.map { it.trim() }
-                    .filter { it.isNotEmpty() && it.all { ch -> ch in '\uAC00'..'\uD7A3' } }
-                    .forEach { words += it }
+                lines.map(String::trim)
+                    .filter { it.length >= 2 && it.all { ch -> ch in '\uAC00'..'\uD7A3' } }
+                    .forEach(words::add)
             }
         }
     }
@@ -41,7 +39,7 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(32, 40, 32, 32)
+            setPadding(28, 36, 28, 28)
             setBackgroundColor(Color.rgb(247, 247, 251))
         }
 
@@ -49,130 +47,126 @@ class MainActivity : Activity() {
             text = "끝말잇기"
             textSize = 30f
             setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
             setTextColor(Color.rgb(31, 41, 55))
         }
         root.addView(title, LinearLayout.LayoutParams(-1, -2))
 
-        scoreText = TextView(this).apply {
+        scoreView = TextView(this).apply {
             textSize = 16f
-            setTextColor(Color.rgb(79, 70, 229))
             gravity = Gravity.CENTER
-            setPadding(0, 8, 0, 20)
+            setPadding(0, 8, 0, 18)
+            setTextColor(Color.rgb(79, 70, 229))
         }
-        root.addView(scoreText, LinearLayout.LayoutParams(-1, -2))
+        root.addView(scoreView, LinearLayout.LayoutParams(-1, -2))
 
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundColor(Color.WHITE)
-        }
-        val cardParams = LinearLayout.LayoutParams(-1, 0, 1f)
-        cardParams.setMargins(0, 8, 0, 16)
-        root.addView(card, cardParams)
-
-        computerWord = TextView(this).apply {
-            textSize = 28f
+        turn = TextView(this).apply {
+            textSize = 27f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
+            setPadding(0, 22, 0, 14)
             setTextColor(Color.rgb(17, 24, 39))
-            setPadding(0, 20, 0, 16)
         }
-        card.addView(computerWord, LinearLayout.LayoutParams(-1, -2))
+        root.addView(turn, LinearLayout.LayoutParams(-1, -2))
 
-        message = TextView(this).apply {
+        status = TextView(this).apply {
             textSize = 17f
             gravity = Gravity.CENTER
+            setPadding(0, 4, 0, 26)
             setTextColor(Color.rgb(75, 85, 99))
-            setPadding(0, 8, 0, 24)
         }
-        card.addView(message, LinearLayout.LayoutParams(-1, -2))
+        root.addView(status, LinearLayout.LayoutParams(-1, -2))
 
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        card.addView(row, LinearLayout.LayoutParams(-1, -2))
-
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         input = EditText(this).apply {
             hint = "단어 입력"
             singleLine = true
             textSize = 18f
-            setPadding(18, 12, 18, 12)
+            setPadding(16, 12, 16, 12)
+            imeOptions = 6
+            setOnEditorActionListener { _, _, _ -> submitWord(); true }
         }
-        row.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
+        inputRow.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
 
         val submit = Button(this).apply {
             text = "입력"
             setOnClickListener { submitWord() }
         }
-        val buttonParams = LinearLayout.LayoutParams(-2, -2)
-        buttonParams.setMargins(12, 0, 0, 0)
-        row.addView(submit, buttonParams)
+        inputRow.addView(submit, LinearLayout.LayoutParams(-2, -2).apply { setMargins(10, 0, 0, 0) })
+        root.addView(inputRow, LinearLayout.LayoutParams(-1, -2))
 
         val restart = Button(this).apply {
             text = "새 게임"
             setOnClickListener { resetGame() }
         }
-        root.addView(restart, LinearLayout.LayoutParams(-1, -2))
+        root.addView(restart, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 14 })
 
         setContentView(root)
     }
 
     private fun resetGame() {
         used.clear()
-        score = 0
         lastWord = null
-        computerWord.text = "첫 단어를 입력하세요"
-        message.text = if (words.isEmpty()) "txt.txt 사전을 넣으면 바로 시작할 수 있어요." else "사전 ${words.size}개 단어 준비 완료"
-        scoreText.text = "점수 0 · 연속 0"
+        score = 0
+        gameOver = false
+        turn.text = "첫 단어를 입력하세요"
+        scoreView.text = "점수 0 · 사용 0개"
+        status.text = if (words.isEmpty()) "txt.txt를 assets 폴더에 넣어주세요." else "사전 ${words.size}개 · 내가 먼저 시작"
         input.text.clear()
+        input.isEnabled = true
     }
 
     private fun submitWord() {
+        if (gameOver) return
         val word = input.text.toString().trim()
-        if (word.isEmpty()) return
+        if (word.isEmpty()) {
+            status.text = "단어를 입력해주세요."
+            return
+        }
         if (word.length < 2) {
-            message.text = "두 글자 이상 입력해주세요."
+            status.text = "두 글자 이상 입력해주세요."
             return
         }
         if (words.isNotEmpty() && word !in words) {
-            message.text = "사전에 없는 단어예요."
+            status.text = "사전에 없는 단어예요."
             return
         }
         if (word in used) {
-            message.text = "이미 사용한 단어예요."
+            status.text = "이미 사용한 단어예요."
             return
         }
-        val expected = lastWord?.lastOrNull()
-        if (expected != null && word.first() != expected) {
-            message.text = "‘$expected’으로 시작하는 단어가 필요해요."
+        val required = lastWord?.lastOrNull()
+        if (required != null && word.first() != required) {
+            status.text = "‘$required’으로 시작하는 단어가 필요해요."
             return
         }
 
         used += word
         score++
         lastWord = word
-        computerTurn(word.last())
         input.text.clear()
-        input.requestFocus()
+        computerTurn(word.last())
     }
 
-    private fun computerTurn(firstChar: Char) {
+    private fun computerTurn(first: Char) {
         val candidates = words.asSequence()
-            .filter { it.isNotEmpty() && it.first() == firstChar && it !in used }
+            .filter { it.firstOrNull() == first && it !in used }
             .toList()
 
         if (candidates.isEmpty()) {
-            computerWord.text = "🎉 $lastWord"
-            message.text = "컴퓨터가 이어갈 단어를 못 찾았어요! 승리!"
-            scoreText.text = "점수 $score · 승리"
+            gameOver = true
+            turn.text = "🎉 승리!"
+            status.text = "컴퓨터가 이어갈 단어를 찾지 못했어요."
+            scoreView.text = "최종 점수 $score"
+            input.isEnabled = false
             return
         }
 
-        val next = candidates.random()
+        val next = candidates.maxByOrNull { it.length } ?: candidates.random()
         used += next
         lastWord = next
-        computerWord.text = "컴퓨터: $next"
-        message.text = "‘${next.last()}’으로 이어주세요."
-        scoreText.text = "점수 $score · 사용 ${used.size}개"
+        turn.text = "컴퓨터: $next"
+        status.text = "‘${next.last()}’으로 시작하는 단어를 입력하세요."
+        scoreView.text = "점수 $score · 사용 ${used.size}개"
     }
 }
